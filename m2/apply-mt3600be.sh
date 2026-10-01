@@ -27,7 +27,7 @@ ok()  { printf '   \033[1;32m✔ %s\033[0m\n' "$*"; }
 export SRC ROOT ATF UB ATF_CFG_DIR UB_CFG_DIR
 
 ###############################################################################
-say "1/8 ATF: 新增 mt7987 bl2/Config.in（SPIM2 开关符号）"
+say "1/9 ATF: 新增 mt7987 bl2/Config.in（SPIM2 开关符号）"
 ###############################################################################
 if [ -f "$ATF/plat/mediatek/mt7987/bl2/Config.in" ]; then
 	ok "已存在，跳过"
@@ -37,7 +37,7 @@ else
 fi
 
 ###############################################################################
-say "2/8 ATF: apsoc_common/Config.in 引入该 Config.in"
+say "2/9 ATF: apsoc_common/Config.in 引入该 Config.in"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -54,7 +54,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "3/8 ATF: mt7987/bl2/bl2.mk —— 增加编译宏与 BL2 DTB 切换"
+say "3/9 ATF: mt7987/bl2/bl2.mk —— 增加编译宏与 BL2 DTB 切换"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -87,7 +87,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "4/8 ATF: bl2_dev_spi_nand.c —— GPIO pinmux 走 SPIM2"
+say "4/9 ATF: bl2_dev_spi_nand.c —— GPIO pinmux 走 SPIM2"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -110,7 +110,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "5/8 ATF: platform.mk —— 登记新的 make 依赖（GEN_DEP_RULES + MAKE_DEP 成对）"
+say "5/9 ATF: platform.mk —— 登记新的 make 依赖（GEN_DEP_RULES + MAKE_DEP 成对）"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -131,7 +131,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "6/8 板级 defconfig（ATF + U-Boot，必须同名）"
+say "6/9 板级 defconfig（ATF + U-Boot，必须同名）"
 ###############################################################################
 cp "$SRC/atf-configs-mt7987_glinet_gl-mt3600be_defconfig" \
    "$ATF_CFG_DIR/mt7987_glinet_gl-mt3600be_defconfig"
@@ -140,14 +140,14 @@ cp "$SRC/uboot-configs-mt7987_glinet_gl-mt3600be_defconfig" \
 ok "已写入 $ATF_CFG_DIR 与 $UB_CFG_DIR"
 
 ###############################################################################
-say "7/8 U-Boot 设备树（board dts + u-boot glue）"
+say "7/9 U-Boot 设备树（board dts + u-boot glue）"
 ###############################################################################
 cp "$SRC/mt7987a-glinet-gl-mt3600be.dts"        "$UB/arch/arm/dts/"
 cp "$SRC/mt7987a-glinet-gl-mt3600be-u-boot.dtsi" "$UB/arch/arm/dts/"
 ok "已写入 $UB/arch/arm/dts/"
 
 ###############################################################################
-say "8/8 注册 DTB 到 arch/arm/dts/Makefile（原树没有 mt7987 条目）"
+say "8/9 注册 DTB 到 arch/arm/dts/Makefile（原树没有 mt7987 条目）"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -164,6 +164,17 @@ print('   ok')
 PY
 
 ###############################################################################
+say "9/9 RAM 启动变体（给 mtk_uartboot ramboot 用；不写 flash 验证）"
+###############################################################################
+# ATF 侧用 _BOOT_DEVICE_RAM + _RAM_BOOT_RAM_BOOT_UART_DL（UART 收 FIP）
+cp "$SRC/atf-configs-mt7987_glinet_gl-mt3600be-ram_defconfig" \
+   "$ATF_CFG_DIR/mt7987_glinet_gl-mt3600be-ram_defconfig"
+# U-Boot 侧同名配置存在即可（build.sh 要求同名；内容与主配置一致）
+cp "$SRC/uboot-configs-mt7987_glinet_gl-mt3600be_defconfig" \
+   "$UB_CFG_DIR/mt7987_glinet_gl-mt3600be-ram_defconfig"
+ok "已写入 ram 变体（ATF + U-Boot）"
+
+###############################################################################
 say "额外：build.sh 指向 20250711 的 ATF/U-Boot 树"
 ###############################################################################
 python3 - <<'PY'
@@ -178,3 +189,4 @@ PY
 
 say "完成。构建命令："
 echo "    SOC=mt7987 BOARD=glinet_gl-mt3600be ./build.sh"
+echo "    SOC=mt7987 BOARD=glinet_gl-mt3600be-ram ./build.sh   # ramboot 用 BL2"
