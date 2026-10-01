@@ -27,7 +27,7 @@ ok()  { printf '   \033[1;32m✔ %s\033[0m\n' "$*"; }
 export SRC ROOT ATF UB ATF_CFG_DIR UB_CFG_DIR
 
 ###############################################################################
-say "1/9 ATF: 新增 mt7987 bl2/Config.in（SPIM2 开关符号）"
+say "1/10 ATF: 新增 mt7987 bl2/Config.in（SPIM2 开关符号）"
 ###############################################################################
 if [ -f "$ATF/plat/mediatek/mt7987/bl2/Config.in" ]; then
 	ok "已存在，跳过"
@@ -37,7 +37,7 @@ else
 fi
 
 ###############################################################################
-say "2/9 ATF: apsoc_common/Config.in 引入该 Config.in"
+say "2/10 ATF: apsoc_common/Config.in 引入该 Config.in"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -54,7 +54,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "3/9 ATF: mt7987/bl2/bl2.mk —— 增加编译宏与 BL2 DTB 切换"
+say "3/10 ATF: mt7987/bl2/bl2.mk —— 增加编译宏与 BL2 DTB 切换"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -87,7 +87,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "4/9 ATF: bl2_dev_spi_nand.c —— GPIO pinmux 走 SPIM2"
+say "4/10 ATF: bl2_dev_spi_nand.c —— GPIO pinmux 走 SPIM2"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -110,7 +110,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "5/9 ATF: platform.mk —— 登记新的 make 依赖（GEN_DEP_RULES + MAKE_DEP 成对）"
+say "5/10 ATF: platform.mk —— 登记新的 make 依赖（GEN_DEP_RULES + MAKE_DEP 成对）"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -131,7 +131,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "6/9 板级 defconfig（ATF + U-Boot，必须同名）"
+say "6/10 板级 defconfig（ATF + U-Boot，必须同名）"
 ###############################################################################
 cp "$SRC/atf-configs-mt7987_glinet_gl-mt3600be_defconfig" \
    "$ATF_CFG_DIR/mt7987_glinet_gl-mt3600be_defconfig"
@@ -140,14 +140,14 @@ cp "$SRC/uboot-configs-mt7987_glinet_gl-mt3600be_defconfig" \
 ok "已写入 $ATF_CFG_DIR 与 $UB_CFG_DIR"
 
 ###############################################################################
-say "7/9 U-Boot 设备树（board dts + u-boot glue）"
+say "7/10 U-Boot 设备树（board dts + u-boot glue）"
 ###############################################################################
 cp "$SRC/mt7987a-glinet-gl-mt3600be.dts"        "$UB/arch/arm/dts/"
 cp "$SRC/mt7987a-glinet-gl-mt3600be-u-boot.dtsi" "$UB/arch/arm/dts/"
 ok "已写入 $UB/arch/arm/dts/"
 
 ###############################################################################
-say "8/9 注册 DTB 到 arch/arm/dts/Makefile（原树没有 mt7987 条目）"
+say "8/10 注册 DTB 到 arch/arm/dts/Makefile（原树没有 mt7987 条目）"
 ###############################################################################
 python3 - <<'PY'
 import os
@@ -164,7 +164,7 @@ print('   ok')
 PY
 
 ###############################################################################
-say "9/9 RAM 启动变体（给 mtk_uartboot ramboot 用；不写 flash 验证）"
+say "9/10 RAM 启动变体（给 mtk_uartboot ramboot 用；不写 flash 验证）"
 ###############################################################################
 # ATF 侧用 _BOOT_DEVICE_RAM + _RAM_BOOT_RAM_BOOT_UART_DL（UART 收 FIP）
 cp "$SRC/atf-configs-mt7987_glinet_gl-mt3600be-ram_defconfig" \
@@ -173,6 +173,41 @@ cp "$SRC/atf-configs-mt7987_glinet_gl-mt3600be-ram_defconfig" \
 cp "$SRC/uboot-configs-mt7987_glinet_gl-mt3600be_defconfig" \
    "$UB_CFG_DIR/mt7987_glinet_gl-mt3600be-ram_defconfig"
 ok "已写入 ram 变体（ATF + U-Boot）"
+
+###############################################################################
+say "10/10 build.sh: 修 RAM 变体拿不到 bl2 的上游缺陷"
+###############################################################################
+# 上游 build.sh 对以 '_' 开头的配置一律要求 build/$SOC/release/bl2.img，
+# 但 ATF 的 bl2_image_post.mk 里：
+#     ifeq ($(BOOT_DEVICE),ram)
+#     bl2: $(BL2_IMG_PAYLOAD)        # → 只产出裸 bl2.bin（没有 BROM 头）
+#     else
+#     bl2: $(BUILD_PLAT)/bl2.img
+#     endif
+# → RAM 变体永远会走到 "bl2 build fail!"。mtk_uartboot 需要的正是裸 bl2.bin，
+#   所以这里让它在缺 bl2.img 时回退用 bl2.bin。
+python3 - <<'PY'
+p = 'build.sh'
+s = open(p, encoding='utf-8').read()
+if 'BL2_SRC' in s:
+    print('   already applied'); raise SystemExit
+
+old_test = '\tif [ -f "$ATF_DIR/build/$SOC/release/bl2.img" ]; then\n'
+assert old_test in s, 'bl2.img test line not found'
+new_test = ('\tif [ -f "$ATF_DIR/build/$SOC/release/bl2.img" ] || '
+            '[ -f "$ATF_DIR/build/$SOC/release/bl2.bin" ]; then\n')
+s = s.replace(old_test, new_test, 1)
+
+old_cp = '\t\tcp -f "$ATF_DIR/build/$SOC/release/bl2.img" "output/$BL2_NAME.bin"\n'
+assert old_cp in s, 'bl2 cp line not found'
+new_cp = ('\t\tBL2_SRC="$ATF_DIR/build/$SOC/release/bl2.img"; '
+          '[ -f "$BL2_SRC" ] || BL2_SRC="$ATF_DIR/build/$SOC/release/bl2.bin"; '
+          'cp -f "$BL2_SRC" "output/$BL2_NAME.bin"\n')
+s = s.replace(old_cp, new_cp, 1)
+
+open(p, 'w', encoding='utf-8').write(s)
+print('   ok（RAM 变体回退到裸 bl2.bin）')
+PY
 
 ###############################################################################
 say "额外：build.sh 指向 20250711 的 ATF/U-Boot 树"
