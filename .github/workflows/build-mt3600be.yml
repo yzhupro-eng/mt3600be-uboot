@@ -1,0 +1,90 @@
+name: build-mt3600be
+
+# 在 GitHub 上编译 GL.iNet GL-MT3600BE (MT7987A) 的 FIP（ATF BL2 + BL31 + U-Boot）
+#
+# 产物：output/mt7987_glinet_gl-mt3600be-fip-fixed-parts.bin  → 刷到 FIP 分区 (0x580000, 2MB)
+#       output/mt7987_glinet_gl-mt3600be-bl2.bin            → 不要刷
+#
+# 背景：本机没有交叉编译环境，且 hanwckf/bl-mt798x 自身没有 CI，所以自建。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'hanwckf/bl-mt798x commit（默认已锁定）'
+        required: false
+        default: 'abe158087c80ed1896f2c281e2dae5e43ffbee41'
+      apply_only:
+        description: '只打补丁不编译（快速校验，true/false）'
+        required: false
+        default: 'false'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout this repo (patch payload)
+        uses: actions/checkout@v4
+
+      - name: Clone hanwckf/bl-mt798x (pinned, blobless)
+        run: |
+          set -e
+          REF="${{ github.event.inputs.upstream_ref }}"
+          echo "upstream ref = $REF"
+          git clone --filter=blob:none --no-checkout https://github.com/hanwckf/bl-mt798x.git src
+          cd src
+          git checkout "$REF"
+          git submodule update --init --recursive --depth 1 || true
+          git log -1 --oneline
+          ls -d atf-20250711 uboot-mtk-20250711 atf-20240117-bacca82a8
+
+      - name: Install aarch64 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            make bc bison flex libssl-dev python3 python3-dev python3-setuptools \
+            swig device-tree-compiler u-boot-tools
+
+      - name: Apply MT3600BE port
+        run: |
+          cd src
+          bash "$GITHUB_WORKSPACE/m2/apply-mt3600be.sh" "$GITHUB_WORKSPACE/m2"
+
+      - name: Verify patch landed
+        run: |
+          cd src
+          set -x
+          grep -n SPIM_NAND_PREFER_SPI2 atf-20250711/plat/mediatek/mt7987/bl2/bl2.mk
+          grep -n 'SPIM2' atf-20250711/plat/mediatek/mt7987/bl2/bl2_dev_spi_nand.c
+          grep -n 'mt7987/bl2/Config.in' atf-20250711/plat/mediatek/apsoc_common/Config.in
+          grep -n mt7987a-glinet-gl-mt3600be uboot-mtk-20250711/arch/arm/dts/Makefile
+          cat atf-20240117-bacca82a8/configs/mt7987_glinet_gl-mt3600be_defconfig
+          head -12 build.sh | grep DIR
+          git --no-pager diff --stat
+          git status --porcelain
+
+      - name: Build FIP
+        if: github.event.inputs.apply_only != 'true'
+        run: |
+          cd src
+          set -o pipefail
+          SOC=mt7987 BOARD=glinet_gl-mt3600be ./build.sh 2>&1 | tee ../build.log
+
+      - name: Show output
+        if: always()
+        run: |
+          ls -l src/output || true
+          tail -n 60 build.log 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always() && github.event.inputs.apply_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mt3600be-fip
+          if-no-files-found: warn
+          path: |
+            src/output/*
+            build.log
