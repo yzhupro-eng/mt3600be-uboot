@@ -2,8 +2,10 @@ name: build-mt3600be
 
 # 在 GitHub 上编译 GL.iNet GL-MT3600BE (MT7987A) 的 FIP（ATF BL2 + BL31 + U-Boot）
 #
-# 产物：output/mt7987_glinet_gl-mt3600be-fip-fixed-parts.bin  → 刷到 FIP 分区 (0x580000, 2MB)
-#       output/mt7987_glinet_gl-mt3600be-bl2.bin            → 不要刷
+# 产物：
+#   output/mt7987_glinet_gl-mt3600be-fip-fixed-parts.bin   ← 刷到 FIP 分区 (0x580000, 2MB)
+#   output/mt7987_glinet_gl-mt3600be-bl2.bin               ← 不要刷
+#   output/mt7987_glinet_gl-mt3600be-ram-bl2.bin           ← mtk_uartboot ramboot 用（不写 flash）
 #
 # 背景：本机没有交叉编译环境，且 hanwckf/bl-mt798x 自身没有 CI，所以自建。
 
@@ -62,22 +64,31 @@ jobs:
           grep -n 'mt7987/bl2/Config.in' atf-20250711/plat/mediatek/apsoc_common/Config.in
           grep -n mt7987a-glinet-gl-mt3600be uboot-mtk-20250711/arch/arm/dts/Makefile
           cat atf-20240117-bacca82a8/configs/mt7987_glinet_gl-mt3600be_defconfig
-          head -12 build.sh | grep DIR
+          cat atf-20240117-bacca82a8/configs/mt7987_glinet_gl-mt3600be-ram_defconfig
+          grep -n 'DIR=' build.sh
           git --no-pager diff --stat
           git status --porcelain
 
-      - name: Build FIP
+      - name: Build FIP (spim-nand, 刷机用)
         if: github.event.inputs.apply_only != 'true'
         run: |
           cd src
           set -o pipefail
           SOC=mt7987 BOARD=glinet_gl-mt3600be ./build.sh 2>&1 | tee ../build.log
 
+      - name: Build BL2 for UART ramboot (不写 flash)
+        if: github.event.inputs.apply_only != 'true'
+        run: |
+          cd src
+          set -o pipefail
+          SOC=mt7987 BOARD=glinet_gl-mt3600be-ram ./build.sh 2>&1 | tee ../build-ram.log
+
       - name: Show output
         if: always()
         run: |
           ls -l src/output || true
           tail -n 60 build.log 2>/dev/null || true
+          tail -n 40 build-ram.log 2>/dev/null || true
 
       - name: Upload artifacts
         if: always() && github.event.inputs.apply_only != 'true'
@@ -88,3 +99,4 @@ jobs:
           path: |
             src/output/*
             build.log
+            build-ram.log
