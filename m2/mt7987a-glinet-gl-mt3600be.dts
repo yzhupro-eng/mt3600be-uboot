@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: GPL-2.0 OR MIT
+/*
+ * GL.iNet GL-MT3600BE (MT7987A) — U-Boot 板级设备树
+ *
+ * 依据：
+ *   1. ImmortalWrt 内核 DTS `mt7987a-glinet-gl-mt3600be.dts`
+ *      (Copyright (C) 2026 Tianling Shen <cnsztl@immortalwrt.org>)
+ *   2. 实机测量（pinctrl pinmux / dmesg / /proc/mtd）
+ *   3. MTK U-Boot 参考板写法 `mt7987a-spim-nand-rfb.dts`
+ *
+ * 注意：按 MTK U-Boot 的约定，SoC/网络/SPI 的“胶水”放在
+ *       `mt7987a-glinet-gl-mt3600be-u-boot.dtsi`（U-Boot 会自动包含同名文件）。
+ *       本文件只放“整机产品”级别的东西（型号、按键、LED、PCIe 复位）。
+ *
+ * 分区表：U-Boot 用 `CONFIG_MTDPARTS_DEFAULT`（见 defconfig），**不**在 DTS 里写分区，
+ *         与 MTK 参考板一致（参考板的 -u-boot.dtsi 会把带分区的 flash 节点删掉）。
+ *         ★ 本机闪存在 SPIM2（0x11009800 / GPIO25-30），不是参考板的 SPIM0。
+ */
+
+/dts-v1/;
+
+#include "mt7987a.dtsi"
+#include "mt7987-pinctrl.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
+/ {
+	model = "GL.iNet GL-MT3600BE";
+	compatible = "glinet,gl-mt3600be", "mediatek,mt7987a", "mediatek,mt7987";
+
+	chosen {
+		bootargs = "console=ttyS0,115200n1 earlycon=uart8250,mmio32,0x11000000 pci=pcie_bus_perf";
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		led_status_blue: led-0 {
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&pio 48 GPIO_ACTIVE_LOW>;
+		};
+
+		led_status_white: led-1 {
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&pio 49 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		/* U-Boot failsafe / glbtn 的触发键，label 必须是 reset */
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+	};
+};
+
+/*
+ * 风扇使能脚 pio6（高有效）。U-Boot 里用 gpio-hog 直接拉高，
+ * 保证 bootloader 阶段风扇就转（内核侧由 regulator-fan-3p3v 管）。
+ */
+&pio {
+	fan_enable_hog: fan-enable-hog {
+		gpio-hog;
+		gpios = <6 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "fan-enable";
+	};
+};
+
+/* WiFi 模块 PCIe 复位（pinctrl/status 由 mt7987a-u-boot.dtsi 设置） */
+&pcie0 {
+	reset-gpios = <&pio 38 GPIO_ACTIVE_HIGH>;
+};
+
+/* USB3 PHY（内核侧还有 ssusb/vbus；U-Boot 侧暂不接线，仅使能 PHY） */
+&tphyu3port0 {
+	status = "okay";
+};

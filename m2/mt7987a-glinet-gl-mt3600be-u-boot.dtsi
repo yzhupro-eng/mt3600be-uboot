@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * GL.iNet GL-MT3600BE — U-Boot 硬件“胶水”（MTK U-Boot 约定：<board>-u-boot.dtsi）
+ *
+ * 参考：`mt7987a-rfb-u-boot.dtsi`（MTK 官方 MT7987 RFB）
+ *
+ * ★ 关键差异（本机实测）：
+ *   闪存挂在 **SPIM2 / 0x11009800 / GPIO25-30**，而参考板挂在 SPIM0。
+ *   实机 pinctrl 证据：
+ *     pin 25 (SPI2_CLK) : device 11009800.spi function spi group spi2
+ *     pin 15-20 (SPI0_*) : UNCLAIMED
+ *   → ATF 侧也必须用 SPIM2（见 m2/README.md 的 SPIM2 补丁）。
+ */
+
+#include "mt7987a-u-boot.dtsi"
+#include "mt7987-netsys-u-boot.dtsi"
+
+/ {
+	model = "mt7987";
+	compatible = "mediatek,mt7987", "glinet,gl-mt3600be";
+
+	bl2_verify {
+		bl2_compatible = "spim-nand";
+	};
+};
+
+/* SPI-NAND：SPIM2 + 4 线 + 52MHz（与内核 DTS 实机值一致） */
+&spi2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi2_flash_pins>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+	must_tx;
+	enhance_timing;
+	dma_ext;
+	ipm_design;
+	support_quad;
+	tick_dly = <2>;
+	sample_sel = <0>;
+
+	spi_nand@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-max-frequency = <52000000>;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+	};
+};
+
+&spi0 {
+	status = "disabled";
+};
+
+/* WAN（2.5G，外置 PHY：RTL8221B-VB-CG @ mdio7，复位 pio42）
+ * 与参考板 RFB 的 eth0 接线一致（同为 2500base-x + pio42 复位），故照搬。
+ * 若实机不亮链路，可改为 phy-handle = <&phy7> 走 Realtek 驱动（见 README 备注）。 */
+&eth0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&mdio0_pins>;
+	phy-mode = "2500base-x";
+	mediatek,switch = "auto";
+	reset-gpios = <&pio 42 GPIO_ACTIVE_HIGH>;
+
+	fixed-link {
+		speed = <2500>;
+		full-duplex;
+		pause;
+	};
+};
+
+/* LAN（2.5G，MT7987 SoC 内置 i2p5gbe @ phy15） */
+&eth1 {
+	status = "okay";
+	pinctrl-names = "i2p5gbe-led";
+	pinctrl-0 = <&i2p5gbe_led0_pins>;
+	phy-mode = "xgmii";
+	phy-handle = <&phy15>;
+
+	phy15: ethernet-phy@15 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <15>;
+		phy-mode = "xgmii";
+	};
+};
+
+/* 本机没有第三个网口 */
+&eth2 {
+	status = "disabled";
+};
